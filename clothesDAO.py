@@ -6,18 +6,13 @@ import config as cfg
 
 
 class ClothesDAO:
-    connection = ""
-    cursor = ''
-    host = ''
-    user = ''
-    password = ''
-    database = ''
-
     def __init__(self):
         self.host = cfg.mysql['host']
         self.user = cfg.mysql['user']
         self.password = cfg.mysql['password']
         self.database = cfg.mysql['database']
+        self.connection = None
+        self.cursor = None
 
     def getcursor(self):
         self.connection = mysql.connector.connect(
@@ -30,72 +25,135 @@ class ClothesDAO:
         return self.cursor
 
     def closeAll(self):
-        self.connection.close()
-        self.cursor.close()
-# get all clothes from the database and return them as a list of dictionaries
+        if self.connection:
+            self.connection.close()
+        if self.cursor:
+            self.cursor.close()
+
+    # =====================================================
+    # GET ALL
+    # =====================================================
     def getAll(self):
         cursor = self.getcursor()
-        sql = "select * from clothes"
-        cursor.execute(sql)
+        cursor.execute("SELECT * FROM clothes")
         results = cursor.fetchall()
+
         returnArray = []
-        # print(results)
         for result in results:
-            # print(result)
             returnArray.append(self.convertToDictionary(result))
+
         self.closeAll()
         return returnArray
 
-# find a clothes item by its id and return it as a dictionary
+    # =====================================================
+    # GET BY ID
+    # =====================================================
     def findByID(self, id):
         cursor = self.getcursor()
-        sql = "select * from clothes where id = %s"
-        values = (id,)
-        cursor.execute(sql, values)
+        cursor.execute("SELECT * FROM clothes WHERE id = %s", (id,))
         result = cursor.fetchone()
+
+        if result is None:
+            self.closeAll()
+            return None
+
         returnvalue = self.convertToDictionary(result)
         self.closeAll()
         return returnvalue
 
-# create a new clothes item in the database and return the created item as a dictionary
+    # =====================================================
+    # CREATE
+    # =====================================================
     def create(self, clothes):
         cursor = self.getcursor()
-        sql = "insert into clothes (name,category, size, gender, color, brand, style, price, discount, stock) values (%s,%s,%s, %s,%s,%s, %s,%s,%s, %s)"
-        values = (clothes.get("title"), clothes.get("author"), clothes.get("price"))
+
+        sql = """
+              INSERT INTO clothes
+              (name, category, size, gender, color, brand, style, price, discount, stock)
+              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) \
+              """
+
+        values = (
+            clothes.get("name"),
+            clothes.get("category"),
+            clothes.get("size"),
+            clothes.get("gender"),
+            clothes.get("color"),
+            clothes.get("brand"),
+            clothes.get("style"),
+            clothes.get("price"),
+            clothes.get("discount"),
+            clothes.get("stock")
+        )
+
         cursor.execute(sql, values)
         self.connection.commit()
-        newid = cursor.lastrowid
-        clothes["id"] = newid
+
+        clothes["id"] = cursor.lastrowid
         self.closeAll()
         return clothes
 
-# update an existing clothes item in the database and return the updated item as a dictionary
+    # =====================================================
+    # UPDATE
+    # =====================================================
     def update(self, id, clothes):
         cursor = self.getcursor()
-        sql = "update clothes set name= %s,category=%s, size=%s, gender=%s, color=%s, brand=%s, style=%s, price=%s, discount=%s, stock=%s  where id = %s"
-        print(f"update clothes {clothes}")
-        values = (clothes.get("title"), clothes.get("author"), clothes.get("price"), id)
+
+        sql = """
+              UPDATE clothes
+              SET name=%s,
+                  category=%s,
+                  size=%s,
+                  gender=%s,
+                  color=%s,
+                  brand=%s,
+                  style=%s,
+                  price=%s,
+                  discount=%s,
+                  stock=%s
+              WHERE id = %s \
+              """
+
+        values = (
+            clothes.get("name"),
+            clothes.get("category"),
+            clothes.get("size"),
+            clothes.get("gender"),
+            clothes.get("color"),
+            clothes.get("brand"),
+            clothes.get("style"),
+            clothes.get("price"),
+            clothes.get("discount"),
+            clothes.get("stock"),
+            id
+        )
+
         cursor.execute(sql, values)
         self.connection.commit()
         self.closeAll()
 
-# delete an existing clothes item in the database by its id
+    # =====================================================
+    # DELETE
+    # =====================================================
     def delete(self, id):
         cursor = self.getcursor()
-        sql = "delete from clothes where id = %s"
-        values = (id,)
-        cursor.execute(sql, values)
+        cursor.execute("DELETE FROM clothes WHERE id = %s", (id,))
         self.connection.commit()
         self.closeAll()
 
-# convert a clothes item from a tuple to a dictionary
+    # =====================================================
+    # CONVERT
+    # =====================================================
     def convertToDictionary(self, resultLine):
-        attkeys = ['id', 'name', 'category, size, gender, color, brand, style, price, discount, stock']
+        keys = [
+            'id', 'name', 'category', 'size', 'gender',
+            'color', 'brand', 'style', 'price', 'discount', 'stock'
+        ]
+
         clothes = {}
-        currentkey = 0
-        for attrib in resultLine:
-            clothes[attkeys[currentkey]] = attrib
-            currentkey = currentkey + 1
+        for i in range(len(keys)):
+            clothes[keys[i]] = resultLine[i]
+
         return clothes
 
 
