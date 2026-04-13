@@ -10,7 +10,7 @@ class ClothesDAO:
         self.host = cfg.mysql['host']
         self.user = cfg.mysql['user']
         self.password = cfg.mysql['password']
-        self.database = cfg.mysql['database']
+        self.database = cfg.mysql['database1']
         self.connection = None
         self.cursor = None
 

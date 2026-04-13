@@ -17,7 +17,7 @@ class AppliancesDAO:
         self.host = cfg.mysql['host']
         self.user = cfg.mysql['user']
         self.password = cfg.mysql['password']
-        self.database = cfg.mysql['database']
+        self.database = cfg.mysql['database2']
 
     def getcursor(self):
         self.connection = mysql.connector.connect(
