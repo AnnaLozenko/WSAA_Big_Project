@@ -9,9 +9,7 @@ app = Flask(__name__, static_url_path='', static_folder='.')
 
 @app.route('/')
 def home():
-    # If you have an index.html file in the same folder, you can redirect the user to it:
     return app.send_static_file('index.html')
-    # return "Welcome to the E-Commerce API! Navigate to /inventory to see items."
 
 
 # ==========================================
