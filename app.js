@@ -7,7 +7,6 @@ let filteredInventory = [];
 let exchangeRate = 1.08; // Default fallback
 let lastRateUpdate = "Checking...";
 
-
 async function fetchExchangeRate() {
     // This is a static JSON file hosted on Cloudflare.
     // It's much harder for firewalls to block than a live API call.
@@ -426,7 +425,7 @@ function renderAdminInventoryTable(filterCategory = 'All', searchTerm = '') {
                 </select>
             </div>
             <div class="col-md-5 text-end">
-                <button class="btn btn-success" onclick="openItemModal()">
+                <button class="btn btn-success" onclick="openItemModal(null)">
                     <i class="fa-solid fa-plus me-1"></i> Add New Item
                 </button>
             </div>
@@ -482,12 +481,40 @@ function renderAdminInventoryTable(filterCategory = 'All', searchTerm = '') {
     // 5. Update the DOM
     content.innerHTML = html;
 
-    // 6. FIX FOCUS: If we were searching, put the cursor back at the end of the text
+    // 6. FIX FOCUS
     if (searchTerm !== "") {
         const searchInput = document.getElementById('adminSearch');
         searchInput.focus();
         searchInput.setSelectionRange(searchTerm.length, searchTerm.length);
     }
+}
+
+function openItemModal(id = null) {
+    // Failsafe: if the browser passed a MouseEvent, treat it as null
+    if (typeof id === 'object') {
+        id = null;
+    }
+
+    const modalElement = document.getElementById('itemModal');
+    const modal = new bootstrap.Modal(modalElement);
+
+    if (id) {
+        // Edit mode logic here
+        const item = adminInventory.find(i => i.id === id);
+        if (document.getElementById('itemId')) document.getElementById('itemId').value = item.id;
+        if (document.getElementById('itemName')) document.getElementById('itemName').value = item.name;
+        if (document.getElementById('itemPrice')) document.getElementById('itemPrice').value = item.price;
+        if (document.getElementById('itemQuantity')) document.getElementById('itemQuantity').value = item.quantity;
+        if (document.getElementById('itemCategory')) document.getElementById('itemCategory').value = item.category;
+    } else {
+        // Add mode: Clear the fields
+        if (document.getElementById('itemId')) document.getElementById('itemId').value = '';
+        if (document.getElementById('itemName')) document.getElementById('itemName').value = '';
+        if (document.getElementById('itemPrice')) document.getElementById('itemPrice').value = '';
+        if (document.getElementById('itemQuantity')) document.getElementById('itemQuantity').value = '';
+        if (document.getElementById('itemCategory')) document.getElementById('itemCategory').value = '';
+    }
+    modal.show();
 }
 
 async function deleteItem(id) {
@@ -503,6 +530,68 @@ async function deleteItem(id) {
         }
     } catch (error) {
         showStatusModal("Error", "Server connection failed.", false);
+    }
+}
+
+async function saveItem() {
+    // 1. Grab the values from the modal inputs
+    const id = document.getElementById('itemId').value;
+    const name = document.getElementById('itemName').value;
+    const category = document.getElementById('itemCategory').value;
+    const price = parseFloat(document.getElementById('itemPrice').value);
+    const quantity = parseInt(document.getElementById('itemQuantity').value);
+
+    // 2. Basic Validation: Ensure nothing is blank or invalid
+    if (!name || !category || isNaN(price) || isNaN(quantity)) {
+        alert("Please fill in all fields correctly before saving.");
+        return;
+    }
+
+    // 3. Package the data into a JSON object
+    const itemData = {
+        name: name,
+        category: category.toLowerCase(),
+        price: price,
+        quantity: quantity
+    };
+
+    try {
+        let response;
+
+        // 4. Decide if we are ADDING (POST) or EDITING (PUT)
+        if (id) {
+            // If there is an ID, we are updating an existing item
+            response = await fetch(`/inventory/${id}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(itemData)
+            });
+        } else {
+            // If there is no ID, we are creating a brand new item
+            response = await fetch('/inventory', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(itemData)
+            });
+        }
+
+        if (response.ok) {
+            // 5. Hide the modal on success
+            const modalElement = document.getElementById('itemModal');
+            const modalInstance = bootstrap.Modal.getInstance(modalElement);
+            modalInstance.hide();
+
+            // 6. Show success message and reload the table
+            showStatusModal("Success!", `Item successfully ${id ? 'updated' : 'added'}.`, true);
+            loadAdminInventory();
+        } else {
+            const errorData = await response.json();
+            showStatusModal("Save Failed", errorData.error || "Could not save the item.", false);
+        }
+
+    } catch (error) {
+        console.error("Save Error:", error);
+        showStatusModal("System Error", "Could not connect to the server to save.", false);
     }
 }
 
@@ -541,7 +630,6 @@ function renderAdminOrdersTable(filterStatus) {
     `;
 
     filteredOrders.forEach(order => {
-        // Fix: Correctly color code all three statuses
         let badgeClass;
         if (order.status === 'Completed') {
             badgeClass = 'bg-success';
@@ -600,7 +688,6 @@ async function viewOrderDetails(orderId, btn) {
 
         let itemsHtml = `<ul class="list-group">`;
         orderItems.forEach(item => {
-            // Fix: Check adminInventory instead of currentInventory for reliable Admin view mapping
             const product = adminInventory.find(p => p.id === item.inv_id) || currentInventory.find(p => p.id === item.inv_id);
             const name = product ? product.name : `Product #${item.inv_id}`;
             itemsHtml += `
@@ -626,44 +713,61 @@ async function loadAnalytics() {
     content.innerHTML = '<div class="text-center mt-5"><div class="spinner-border text-primary"></div><p>Calculating live analytics...</p></div>';
 
     try {
-        const [ordersRes, invRes] = await Promise.all([
+        // FIX: We now fetch order_items as well to calculate true Sales volume
+        const [ordersRes, invRes, itemsRes] = await Promise.all([
             fetch('/orders'),
-            fetch('/inventory')
+            fetch('/inventory'),
+            fetch('/order_items')
         ]);
 
         const orders = await ordersRes.json();
         const inventory = await invRes.json();
+        const orderItems = await itemsRes.json();
 
+        // Stock Value Calculation
         const totalValueEUR = inventory.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
         const totalValueUSD = totalValueEUR * exchangeRate;
 
+        // Sales Calculation (Only summing up orders that were successfully 'Completed')
+        const completedOrderIds = orders.filter(o => o.status === 'Completed').map(o => o.id);
+        const totalSalesEUR = orderItems
+            .filter(item => completedOrderIds.includes(item.order_id))
+            .reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
         content.innerHTML = `
-            <div class="row mb-4">
-                <div class="col-md-3 mb-3">
+            <div class="row mb-4 g-3">
+                <div class="col-md-3">
                     <div class="card bg-primary text-white text-center p-3 border-0 shadow-sm h-100">
                         <h6 class="text-uppercase small opacity-75">Total Products</h6>
                         <h3 class="mb-0">${inventory.length}</h3>
                     </div>
                 </div>
-                <div class="col-md-3 mb-3">
+                <div class="col-md-3">
                     <div class="card bg-success text-white text-center p-3 border-0 shadow-sm h-100">
                         <h6 class="text-uppercase small opacity-75">Stock Units</h6>
                         <h3 class="mb-0">${inventory.reduce((sum, i) => sum + i.quantity, 0)}</h3>
                     </div>
                 </div>
-                <div class="col-md-6 mb-3">
+                <div class="col-md-6">
                     <div class="card bg-dark text-white p-3 border-0 shadow-sm h-100">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-uppercase small opacity-75 text-info">Live Inventory Value</h6>
-                            <h3 class="mb-0">€${totalValueEUR.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
-                            <p class="small text-warning mb-0">≈ $${totalValueUSD.toLocaleString(undefined, {minimumFractionDigits: 2})} USD</p>
-                        </div>
-                        <div class="text-end">
-                            <i class="fa-solid fa-scale-balanced fa-2x opacity-25"></i>
-                            <div class="small mt-2" style="font-size: 0.7rem; line-height: 1.2;">
-                                Rate: 1.00 : ${exchangeRate.toFixed(4)}<br>
-                                <span class="text-info">Updated: ${lastRateUpdate}</span>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="text-uppercase small opacity-75 text-info">Financial Overview</h6>
+                                <div class="mb-1">
+                                    <span class="text-muted small">Live Inventory Value:</span>
+                                    <h4 class="mb-0">€${totalValueEUR.toLocaleString(undefined, {minimumFractionDigits: 2})} <span class="small text-warning fs-6">≈ $${totalValueUSD.toLocaleString(undefined, {minimumFractionDigits: 2})} USD</span></h4>
+                                </div>
+                                <div>
+                                    <span class="text-muted small">Total Sales (Completed):</span>
+                                    <h5 class="text-success mb-0">+ €${totalSalesEUR.toLocaleString(undefined, {minimumFractionDigits: 2})}</h5>
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <i class="fa-solid fa-scale-balanced fa-2x opacity-25"></i>
+                                <div class="small mt-2" style="font-size: 0.7rem; line-height: 1.2;">
+                                    Rate: 1.00 : ${exchangeRate.toFixed(4)}<br>
+                                    <span class="text-info">Updated: ${lastRateUpdate}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -710,10 +814,12 @@ async function loadAnalytics() {
 }
 
 function renderAnalyticsCharts(orders, inventory) {
+    // --- 1. Order Status Doughnut Chart ---
     const statusCounts = {Pending: 0, Completed: 0, Failed: 0};
     orders.forEach(o => {
         if (statusCounts[o.status] !== undefined) statusCounts[o.status]++;
     });
+    const totalOrders = orders.length;
 
     new Chart(document.getElementById('orderStatusChart'), {
         type: 'doughnut',
@@ -725,13 +831,29 @@ function renderAnalyticsCharts(orders, inventory) {
                 borderWidth: 0
             }]
         },
-        options: {cutout: '60%'}
+        options: {
+            cutout: '60%',
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function (context) {
+                            const val = context.raw;
+                            const perc = totalOrders > 0 ? ((val / totalOrders) * 100).toFixed(1) : 0;
+                            return ` ${context.label}: ${val} orders (${perc}%)`;
+                        }
+                    }
+                }
+            }
+        }
     });
 
+    // --- 2. Inventory Category Pie Chart ---
     const categoryStock = {};
+    let totalStock = 0;
     inventory.forEach(item => {
         const cat = item.category.toLowerCase();
         categoryStock[cat] = (categoryStock[cat] || 0) + item.quantity;
+        totalStock += item.quantity;
     });
 
     new Chart(document.getElementById('inventoryCategoryChart'), {
@@ -743,9 +865,23 @@ function renderAnalyticsCharts(orders, inventory) {
                 backgroundColor: ['#0dcaf0', '#6f42c1', '#fd7e14', '#20c997'],
                 borderWidth: 0
             }]
+        },
+        options: {
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function (context) {
+                            const val = context.raw;
+                            const perc = totalStock > 0 ? ((val / totalStock) * 100).toFixed(1) : 0;
+                            return ` ${context.label}: ${val} units (${perc}%)`;
+                        }
+                    }
+                }
+            }
         }
     });
 
+    // --- 3. Lowest Stock Bar Chart ---
     const sortedInv = [...inventory].sort((a, b) => a.quantity - b.quantity).slice(0, 10);
     new Chart(document.getElementById('stockLevelsChart'), {
         type: 'bar',
