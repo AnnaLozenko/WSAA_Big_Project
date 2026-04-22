@@ -4,7 +4,41 @@ let isUSD = false;
 let itemsToShow = 12;
 let currentCount = 0;
 let filteredInventory = [];
-const exchangeRate = 1.08; // 1 EUR = 1.08 USD
+let exchangeRate = 1.08; // Default fallback
+let lastRateUpdate = "Checking...";
+
+
+async function fetchExchangeRate() {
+    // This is a static JSON file hosted on Cloudflare.
+    // It's much harder for firewalls to block than a live API call.
+    const url = `https://latest.currency-api.pages.dev/v1/currencies/eur.json`;
+
+    try {
+        const response = await fetch(url);
+
+        if (!response.ok) throw new Error("CDN Unreachable");
+
+        const data = await response.json();
+
+        // The structure here is data.eur.usd
+        if (data && data.eur && data.eur.usd) {
+            exchangeRate = data.eur.usd;
+            lastRateUpdate = new Date().toLocaleTimeString();
+            console.log("✅ Success! Rate loaded via CDN:", exchangeRate);
+        } else {
+            throw new Error("Data format unexpected");
+        }
+
+    } catch (error) {
+        console.error("CDN Fetch failed:", error);
+        // CRITICAL: Update the UI so it doesn't stay stuck on "Checking..."
+        lastRateUpdate = "Last attempt: " + new Date().toLocaleTimeString() + " (Fixed Fallback)";
+        exchangeRate = 1.08; // Reset to safe default
+    }
+}
+
+// Run it immediately
+fetchExchangeRate();
 
 // ==========================================
 // NAVIGATION & UI LOGIC
@@ -145,19 +179,36 @@ function loadMore() {
 }
 
 // Category filter reset
-document.getElementById('categoryFilter').addEventListener('change', function (e) {
-    const selectedCategory = e.target.value.toLowerCase();
+function applyFilters() {
+    const searchTerm = document.getElementById('customerSearch').value.toLowerCase();
+    const category = document.getElementById('categoryFilter').value.toLowerCase();
+    const sort = document.getElementById('sortFilter').value;
 
-    if (selectedCategory === 'all') {
-        filteredInventory = [...currentInventory];
-    } else {
-        filteredInventory = currentInventory.filter(
-            item => item.category.toLowerCase() === selectedCategory
-        );
+    // 1. Start with the full inventory
+    let result = [...currentInventory];
+
+    // 2. Filter by Category
+    if (category !== 'all') {
+        result = result.filter(item => item.category.toLowerCase() === category);
     }
 
-    displayProducts(false); // Reset to top and show first 12
-});
+    // 3. Filter by Search Term
+    if (searchTerm) {
+        result = result.filter(item => item.name.toLowerCase().includes(searchTerm));
+    }
+
+    // 4. Sort
+    if (sort === 'price-asc') {
+        result.sort((a, b) => a.price - b.price);
+    } else if (sort === 'price-desc') {
+        result.sort((a, b) => b.price - a.price);
+    } else {
+        result.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    filteredInventory = result;
+    displayProducts(false); // Re-render from the first 12
+}
 
 // ==========================================
 // CART LOGIC
@@ -336,124 +387,106 @@ async function loadAdminInventory() {
     }
 }
 
-function renderAdminInventoryTable(filterCategory = 'All') {
+function renderAdminInventoryTable(filterCategory = 'All', searchTerm = '') {
     const content = document.getElementById('admin-content-area');
-    let filteredItems = adminInventory;
 
-    if (filterCategory !== 'All') {
-        filteredItems = adminInventory.filter(item => item.category.toLowerCase() === filterCategory.toLowerCase());
-    }
+    // 1. Filter Logic
+    let filteredItems = adminInventory.filter(item => {
+        const matchesCategory = (filterCategory === 'All' || item.category.toLowerCase() === filterCategory.toLowerCase());
+        const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+        return matchesCategory && matchesSearch;
+    });
 
+    // 2. Sort items alphabetically
     filteredItems.sort((a, b) => a.name.localeCompare(b.name));
+
+    // 3. Get unique categories for the dropdown
     const uniqueCategories = [...new Set(adminInventory.map(item => item.category.toLowerCase()))];
 
+    // 4. Generate HTML
     let html = `
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <div class="d-flex align-items-center">
-                <label class="fw-bold me-2">Filter Category:</label>
-                <select class="form-select w-auto border-primary" onchange="renderAdminInventoryTable(this.value)">
+        <div class="row mb-3 g-2 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <span class="input-group-text bg-white border-primary text-primary">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </span>
+                    <input type="text" id="adminSearch" class="form-control border-primary" 
+                           placeholder="Search inventory..." value="${searchTerm}"
+                           oninput="renderAdminInventoryTable(document.getElementById('adminCategoryFilter').value, this.value)">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <select id="adminCategoryFilter" class="form-select border-primary" 
+                        onchange="renderAdminInventoryTable(this.value, document.getElementById('adminSearch').value)">
                     <option value="All" ${filterCategory === 'All' ? 'selected' : ''}>All Categories</option>
                     ${uniqueCategories.map(cat => `
                         <option value="${cat}" class="text-capitalize" ${filterCategory === cat ? 'selected' : ''}>${cat}</option>
                     `).join('')}
                 </select>
             </div>
-            <button class="btn btn-success" onclick="openItemModal()"><i class="fa-solid fa-plus"></i> Add New Item</button>
+            <div class="col-md-5 text-end">
+                <button class="btn btn-success" onclick="openItemModal()">
+                    <i class="fa-solid fa-plus me-1"></i> Add New Item
+                </button>
+            </div>
         </div>
-        <table class="table table-hover bg-white shadow-sm align-middle">
-            <thead class="table-dark">
-                <tr><th>ID</th><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Actions</th></tr>
-            </thead>
-            <tbody>
+        
+        <div class="table-responsive">
+            <table class="table table-hover bg-white shadow-sm align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>Price</th>
+                        <th>Stock Status</th>
+                        <th class="text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
     `;
 
     if (filteredItems.length === 0) {
-        html += `<tr><td colspan="6" class="text-center text-muted">No items found in this category.</td></tr>`;
+        html += `<tr><td colspan="6" class="text-center py-4 text-muted">No items match your search.</td></tr>`;
     } else {
         filteredItems.forEach(item => {
+            const lowStock = item.quantity < 5;
             html += `
                 <tr>
-                    <td>${item.id}</td>
-                    <td>${item.name}</td>
-                    <td class="text-capitalize">${item.category}</td>
+                    <td><span class="badge bg-light text-dark border">${item.id}</span></td>
+                    <td class="fw-bold">${item.name}</td>
+                    <td><span class="badge bg-secondary text-capitalize">${item.category}</span></td>
                     <td>€${Number(item.price).toFixed(2)}</td>
-                    <td class="${item.quantity < 5 ? 'text-danger fw-bold' : ''}">${item.quantity}</td>
                     <td>
-                        <button class="btn btn-sm btn-outline-primary me-1" onclick="openItemModal(${item.id})"><i class="fa-solid fa-pen"></i></button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteItem(${item.id})"><i class="fa-solid fa-trash"></i></button>
+                        <span class="${lowStock ? 'text-danger fw-bold' : 'text-success'}">
+                            <i class="fa-solid ${lowStock ? 'fa-triangle-exclamation' : 'fa-check-circle'} me-1"></i>
+                            ${item.quantity} units
+                        </span>
+                    </td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="openItemModal(${item.id})" title="Edit">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteItem(${item.id})" title="Delete">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
                     </td>
                 </tr>
             `;
         });
     }
 
-    html += `</tbody></table>`;
+    html += `</tbody></table></div>`;
+
+    // 5. Update the DOM
     content.innerHTML = html;
-}
 
-function openItemModal(id = null) {
-    const itemModal = new bootstrap.Modal(document.getElementById('itemModal'));
-
-    if (id) {
-        const item = adminInventory.find(i => i.id === id);
-        document.getElementById('itemModalTitle').innerText = "Edit Item #" + id;
-        document.getElementById('itemId').value = item.id;
-        document.getElementById('itemName').value = item.name;
-        document.getElementById('itemCategory').value = item.category.toLowerCase();
-        document.getElementById('itemPrice').value = Number(item.price).toFixed(2);
-        document.getElementById('itemQuantity').value = item.quantity;
-    } else {
-        document.getElementById('itemModalTitle').innerText = "Add New Item";
-        document.getElementById('itemId').value = "";
-        document.getElementById('itemName').value = "";
-        document.getElementById('itemCategory').value = "food";
-        document.getElementById('itemPrice').value = "";
-        document.getElementById('itemQuantity').value = "";
-    }
-    itemModal.show();
-}
-
-async function saveItem() {
-    const id = document.getElementById('itemId').value;
-    const name = document.getElementById('itemName').value.trim();
-    const category = document.getElementById('itemCategory').value;
-    const price = parseFloat(document.getElementById('itemPrice').value);
-    const quantity = parseInt(document.getElementById('itemQuantity').value);
-
-    if (!name || isNaN(price) || isNaN(quantity)) {
-        showStatusModal("Input Error", "Please fill in all fields with valid data.", false);
-        return;
-    }
-
-    const payload = {
-        name: name,
-        category: category,
-        price: price,
-        quantity: quantity,
-        created_date: "2026-04-02",
-        last_updated: "2026-04-02"
-    };
-
-    const method = id ? 'PATCH' : 'POST';
-    const url = id ? `/inventory/${id}` : '/inventory';
-
-    try {
-        const res = await fetch(url, {
-            method: method,
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
-        });
-
-        if (res.ok) {
-            bootstrap.Modal.getInstance(document.getElementById('itemModal')).hide();
-            showStatusModal("Success", `Item ${id ? 'updated' : 'created'} successfully!`, true);
-            loadAdminInventory();
-        } else {
-            const errData = await res.json();
-            showStatusModal("Error", errData.message || "Failed to save item.", false);
-        }
-    } catch (error) {
-        showStatusModal("Error", "Server connection failed.", false);
+    // 6. FIX FOCUS: If we were searching, put the cursor back at the end of the text
+    if (searchTerm !== "") {
+        const searchInput = document.getElementById('adminSearch');
+        searchInput.focus();
+        searchInput.setSelectionRange(searchTerm.length, searchTerm.length);
     }
 }
 
@@ -500,91 +533,97 @@ function renderAdminOrdersTable(filterStatus) {
                 <option value="Failed" ${filterStatus === 'Failed' ? 'selected' : ''}>Failed</option>
             </select>
         </div>
-        <table class="table table-striped bg-white shadow-sm align-middle">
+        <table class="table table-hover bg-white shadow-sm align-middle">
             <thead class="table-dark">
-                <tr><th>Order ID</th><th>Customer ID</th><th>Date</th><th>Status</th></tr>
+                <tr><th>ID</th><th>Customer</th><th>Date</th><th>Status</th><th>Action</th></tr>
             </thead>
-            <tbody>
+            <tbody id="ordersTbody">
     `;
 
-    if (filteredOrders.length === 0) {
-        html += `<tr><td colspan="4" class="text-center text-muted">No orders found.</td></tr>`;
-    } else {
-        filteredOrders.forEach(order => {
-            let badgeClass = order.status === 'Completed' ? 'bg-success' : (order.status === 'Failed' ? 'bg-danger' : 'bg-warning text-dark');
-            const displayDate = new Date(order.order_date).toLocaleDateString();
+    filteredOrders.forEach(order => {
+        // Fix: Correctly color code all three statuses
+        let badgeClass;
+        if (order.status === 'Completed') {
+            badgeClass = 'bg-success';
+        } else if (order.status === 'Failed') {
+            badgeClass = 'bg-danger';
+        } else {
+            badgeClass = 'bg-warning text-dark'; // Pending
+        }
 
-            html += `
-                <tr>
-                    <td><strong>#${order.id}</strong></td>
-                    <td>Cust_${order.cust_id}</td>
-                    <td>${displayDate}</td>
-                    <td><span class="badge ${badgeClass}">${order.status}</span></td>
-                </tr>
-            `;
-        });
-    }
+        html += `
+            <tr>
+                <td><strong>#${order.id}</strong></td>
+                <td>Cust_${order.cust_id}</td>
+                <td>${new Date(order.order_date).toLocaleDateString()}</td>
+                <td><span class="badge ${badgeClass}">${order.status}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary" onclick="viewOrderDetails(${order.id}, this)">
+                        View Items
+                    </button>
+                </td>
+            </tr>
+            <tr id="details-${order.id}" class="hidden bg-light">
+                <td colspan="5">
+                    <div class="p-3" id="details-content-${order.id}">Loading...</div>
+                </td>
+            </tr>
+        `;
+    });
 
     html += `</tbody></table>`;
     content.innerHTML = html;
 }
 
-// ------------------------------------------
-// ANALYTICS TAB (CHART.JS)
-// ------------------------------------------
+async function viewOrderDetails(orderId, btn) {
+    const detailsRow = document.getElementById(`details-${orderId}`);
+    const contentDiv = document.getElementById(`details-content-${orderId}`);
+
+    if (!detailsRow.classList.contains('hidden')) {
+        detailsRow.classList.add('hidden');
+        btn.innerText = "View Items";
+        return;
+    }
+
+    detailsRow.classList.remove('hidden');
+    btn.innerText = "Hide Items";
+
+    try {
+        const res = await fetch(`/order_items`);
+        const allItems = await res.json();
+        const orderItems = allItems.filter(item => item.order_id === orderId);
+
+        if (orderItems.length === 0) {
+            contentDiv.innerHTML = "<em>No items found for this order.</em>";
+            return;
+        }
+
+        let itemsHtml = `<ul class="list-group">`;
+        orderItems.forEach(item => {
+            // Fix: Check adminInventory instead of currentInventory for reliable Admin view mapping
+            const product = adminInventory.find(p => p.id === item.inv_id) || currentInventory.find(p => p.id === item.inv_id);
+            const name = product ? product.name : `Product #${item.inv_id}`;
+            itemsHtml += `
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    ${name} (x${item.quantity})
+                    <span>€${(item.price * item.quantity).toFixed(2)}</span>
+                </li>`;
+        });
+        itemsHtml += `</ul>`;
+        contentDiv.innerHTML = itemsHtml;
+    } catch (e) {
+        contentDiv.innerHTML = "Error loading details.";
+    }
+}
+
+// ==========================================
+// ANALYTICS TAB (CHART.JS + LIVE API)
+// ==========================================
+
 async function loadAnalytics() {
     const content = document.getElementById('admin-content-area');
 
-    content.innerHTML = `
-        <div class="row mb-4">
-            <div class="col-md-4">
-                <div class="card bg-primary text-white text-center p-3 border-0">
-                    <h6>Total Products</h6>
-                    <h3 id="statTotalProducts">-</h3>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card bg-success text-white text-center p-3 border-0">
-                    <h6>Total Stock Units</h6>
-                    <h3 id="statTotalUnits">-</h3>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card bg-info text-white text-center p-3 border-0">
-                    <h6>Total Orders</h6>
-                    <h3 id="statTotalOrders">-</h3>
-                </div>
-            </div>
-        </div>
-        <div class="row mt-4">
-            <div class="col-md-6 mb-4">
-                <div class="card shadow-sm h-100 border-0">
-                    <div class="card-body">
-                        <h5 class="card-title text-center text-muted">Order Status Distribution</h5>
-                        <canvas id="orderStatusChart"></canvas>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6 mb-4">
-                <div class="card shadow-sm h-100 border-0">
-                    <div class="card-body">
-                        <h5 class="card-title text-center text-muted">Stock Quantity by Category</h5>
-                        <canvas id="inventoryCategoryChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="row">
-            <div class="col-12 mb-4">
-                <div class="card shadow-sm border-0">
-                    <div class="card-body">
-                        <h5 class="card-title text-muted"><i class="fa-solid fa-arrow-down-9-1"></i> Lowest Stock Items (Top 10)</h5>
-                        <canvas id="stockLevelsChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
+    content.innerHTML = '<div class="text-center mt-5"><div class="spinner-border text-primary"></div><p>Calculating live analytics...</p></div>';
 
     try {
         const [ordersRes, invRes] = await Promise.all([
@@ -595,66 +634,133 @@ async function loadAnalytics() {
         const orders = await ordersRes.json();
         const inventory = await invRes.json();
 
-        document.getElementById('statTotalProducts').innerText = inventory.length;
-        document.getElementById('statTotalUnits').innerText = inventory.reduce((sum, i) => sum + i.quantity, 0);
-        document.getElementById('statTotalOrders').innerText = orders.length;
+        const totalValueEUR = inventory.reduce((sum, item) => sum + (Number(item.price) * item.quantity), 0);
+        const totalValueUSD = totalValueEUR * exchangeRate;
 
-        const statusCounts = {Pending: 0, Completed: 0, Failed: 0};
-        orders.forEach(o => {
-            if (statusCounts[o.status] !== undefined) statusCounts[o.status]++;
-        });
+        content.innerHTML = `
+            <div class="row mb-4">
+                <div class="col-md-3 mb-3">
+                    <div class="card bg-primary text-white text-center p-3 border-0 shadow-sm h-100">
+                        <h6 class="text-uppercase small opacity-75">Total Products</h6>
+                        <h3 class="mb-0">${inventory.length}</h3>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="card bg-success text-white text-center p-3 border-0 shadow-sm h-100">
+                        <h6 class="text-uppercase small opacity-75">Stock Units</h6>
+                        <h3 class="mb-0">${inventory.reduce((sum, i) => sum + i.quantity, 0)}</h3>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <div class="card bg-dark text-white p-3 border-0 shadow-sm h-100">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-uppercase small opacity-75 text-info">Live Inventory Value</h6>
+                            <h3 class="mb-0">€${totalValueEUR.toLocaleString(undefined, {minimumFractionDigits: 2})}</h3>
+                            <p class="small text-warning mb-0">≈ $${totalValueUSD.toLocaleString(undefined, {minimumFractionDigits: 2})} USD</p>
+                        </div>
+                        <div class="text-end">
+                            <i class="fa-solid fa-scale-balanced fa-2x opacity-25"></i>
+                            <div class="small mt-2" style="font-size: 0.7rem; line-height: 1.2;">
+                                Rate: 1.00 : ${exchangeRate.toFixed(4)}<br>
+                                <span class="text-info">Updated: ${lastRateUpdate}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-        new Chart(document.getElementById('orderStatusChart'), {
-            type: 'doughnut',
-            data: {
-                labels: ['Pending', 'Completed', 'Failed'],
-                datasets: [{
-                    data: [statusCounts.Pending, statusCounts.Completed, statusCounts.Failed],
-                    backgroundColor: ['#ffc107', '#198754', '#dc3545'],
-                    borderWidth: 0
-                }]
-            },
-            options: {cutout: '60%'}
-        });
+            <div class="row mt-4">
+                <div class="col-md-6 mb-4">
+                    <div class="card shadow-sm h-100 border-0">
+                        <div class="card-body">
+                            <h5 class="card-title text-center text-muted">Order Status Distribution</h5>
+                            <canvas id="orderStatusChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-4">
+                    <div class="card shadow-sm h-100 border-0">
+                        <div class="card-body">
+                            <h5 class="card-title text-center text-muted">Stock Quantity by Category</h5>
+                            <canvas id="inventoryCategoryChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-        const categoryStock = {};
-        inventory.forEach(item => {
-            const cat = item.category.toLowerCase();
-            categoryStock[cat] = (categoryStock[cat] || 0) + item.quantity;
-        });
+            <div class="row">
+                <div class="col-12 mb-4">
+                    <div class="card shadow-sm border-0">
+                        <div class="card-body">
+                            <h5 class="card-title text-muted"><i class="fa-solid fa-arrow-down-9-1"></i> Lowest Stock Items (Top 10)</h5>
+                            <canvas id="stockLevelsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
 
-        new Chart(document.getElementById('inventoryCategoryChart'), {
-            type: 'pie',
-            data: {
-                labels: Object.keys(categoryStock).map(c => c.charAt(0).toUpperCase() + c.slice(1)),
-                datasets: [{
-                    data: Object.values(categoryStock),
-                    backgroundColor: ['#0dcaf0', '#6f42c1', '#fd7e14', '#20c997'],
-                    borderWidth: 0
-                }]
-            }
-        });
-
-        const sortedInv = [...inventory].sort((a, b) => a.quantity - b.quantity).slice(0, 10);
-
-        new Chart(document.getElementById('stockLevelsChart'), {
-            type: 'bar',
-            data: {
-                labels: sortedInv.map(i => i.name),
-                datasets: [{
-                    label: 'Units in Stock',
-                    data: sortedInv.map(i => i.quantity),
-                    backgroundColor: sortedInv.map(i => i.quantity < 5 ? '#dc3545' : '#0d6efd'),
-                    borderRadius: 4
-                }]
-            },
-            options: {
-                scales: {y: {beginAtZero: true}},
-                plugins: {legend: {display: false}}
-            }
-        });
+        renderAnalyticsCharts(orders, inventory);
 
     } catch (error) {
         console.error("Analytics Error:", error);
+        content.innerHTML = `<div class="alert alert-danger">Error loading analytics: ${error.message}</div>`;
     }
+}
+
+function renderAnalyticsCharts(orders, inventory) {
+    const statusCounts = {Pending: 0, Completed: 0, Failed: 0};
+    orders.forEach(o => {
+        if (statusCounts[o.status] !== undefined) statusCounts[o.status]++;
+    });
+
+    new Chart(document.getElementById('orderStatusChart'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Pending', 'Completed', 'Failed'],
+            datasets: [{
+                data: [statusCounts.Pending, statusCounts.Completed, statusCounts.Failed],
+                backgroundColor: ['#ffc107', '#198754', '#dc3545'],
+                borderWidth: 0
+            }]
+        },
+        options: {cutout: '60%'}
+    });
+
+    const categoryStock = {};
+    inventory.forEach(item => {
+        const cat = item.category.toLowerCase();
+        categoryStock[cat] = (categoryStock[cat] || 0) + item.quantity;
+    });
+
+    new Chart(document.getElementById('inventoryCategoryChart'), {
+        type: 'pie',
+        data: {
+            labels: Object.keys(categoryStock).map(c => c.charAt(0).toUpperCase() + c.slice(1)),
+            datasets: [{
+                data: Object.values(categoryStock),
+                backgroundColor: ['#0dcaf0', '#6f42c1', '#fd7e14', '#20c997'],
+                borderWidth: 0
+            }]
+        }
+    });
+
+    const sortedInv = [...inventory].sort((a, b) => a.quantity - b.quantity).slice(0, 10);
+    new Chart(document.getElementById('stockLevelsChart'), {
+        type: 'bar',
+        data: {
+            labels: sortedInv.map(i => i.name),
+            datasets: [{
+                label: 'Units in Stock',
+                data: sortedInv.map(i => i.quantity),
+                backgroundColor: sortedInv.map(i => i.quantity < 5 ? '#dc3545' : '#0d6efd'),
+                borderRadius: 4
+            }]
+        },
+        options: {
+            scales: {y: {beginAtZero: true}},
+            plugins: {legend: {display: false}}
+        }
+    });
 }

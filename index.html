@@ -3,33 +3,75 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Data Analytics E-Commerce Shop</title>
+    <title>Data Shop</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <style>
-        /* Utility class to hide sections */
+        /* Modern Orange-Yellow Gradient Background */
+        body {
+            background: linear-gradient(135deg, #FF8C00 0%, #FFD700 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Glassmorphism Effect for Cards */
+        .role-card {
+            background: rgba(255, 255, 255, 0.9) !important;
+            backdrop-filter: blur(10px);
+            border: none !important;
+            border-radius: 20px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            color: #333 !important;
+        }
+
+        .role-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.2) !important;
+            background: #fff !important;
+        }
+
+        .role-icon {
+            color: #FF8C00;
+            margin-bottom: 20px;
+        }
+
+        /* Hero Text Shadow */
+        .hero-title {
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+            font-weight: 800;
+        }
+
+        .hero-subtitle {
+            color: rgba(255, 255, 255, 0.9);
+        }
+
         .hidden {
             display: none !important;
-            visibility: hidden !important;
         }
 
-        .product-card {
-            transition: transform 0.2s;
-        }
-
-        .product-card:hover {
-            transform: scale(1.02);
+        /* Ensure internal shop views remain clean on white backgrounds */
+        #customer-view, #admin-view, #cart-view {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            margin-bottom: 50px;
         }
     </style>
 </head>
 <body class="bg-light">
 
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+<nav class="navbar navbar-expand-lg navbar-dark pt-4">
     <div class="container">
-        <a class="navbar-brand" href="#" onclick="showSection('role-selection')">
-            <i class="fa-solid fa-chart-line"></i> DataShop
+        <a class="navbar-brand fw-bold fs-3" href="#" onclick="showSection('role-selection')">
+            <i class="fa-solid fa-chart-line me-2"></i> DataShop
         </a>
 
         <div class="d-flex align-items-center">
@@ -41,7 +83,8 @@
                 <i class="fa-solid fa-cart-shopping"></i> Cart (<span id="cartCount">0</span>)
             </button>
 
-            <button class="btn btn-outline-info ms-3 hidden" id="switchRoleBtn" onclick="showSection('role-selection')">
+            <button class="btn btn-info text-white ms-3 hidden" id="switchRoleBtn"
+                    onclick="showSection('role-selection')">
                 Switch Role
             </button>
         </div>
@@ -50,36 +93,70 @@
 
 <div class="container mt-5">
 
-    <div id="role-selection" class="text-center">
-        <h1 class="mb-4">Welcome to DataShop</h1>
-        <p class="lead mb-5">Please select your profile to continue:</p>
-        <div class="row justify-content-center gap-4">
-            <div class="col-md-4">
-                <div class="card p-5 shadow-sm btn btn-outline-primary" onclick="initCustomerView()">
-                    <i class="fa-solid fa-user fa-4x mb-3"></i>
+    <div id="role-selection" class="text-center py-5">
+        <div class="mb-5">
+            <h1 class="display-3 hero-title">DataShop</h1>
+            <p class="lead hero-subtitle">Please, choose your role</p>
+        </div>
+
+        <div class="row justify-content-center g-4">
+            <div class="col-md-4 d-flex align-items-stretch">
+                <div class="card p-5 shadow role-card w-100 h-100" onclick="initCustomerView()">
+                    <div class="role-icon">
+                        <i class="fa-solid fa-cart-shopping fa-4x"></i>
+                    </div>
                     <h3>Customer</h3>
-                    <p class="text-muted">Browse items, add to cart, and checkout.</p>
+                    <p class="text-muted">Browse our collection with seamless checkout.</p>
+                    <div class="mt-auto">
+                        <span class="btn btn-orange btn-sm rounded-pill px-4"
+                              style="background: #FF8C00; color: white;">Enter Shop</span>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="card p-5 shadow-sm btn btn-outline-success" onclick="initAdminView()">
-                    <i class="fa-solid fa-user-tie fa-4x mb-3"></i>
-                    <h3>Admin</h3>
-                    <p class="text-muted">Manage inventory, view orders, and analytics.</p>
+
+            <div class="col-md-4 d-flex align-items-stretch">
+                <div class="card p-5 shadow role-card w-100 h-100" onclick="initAdminView()">
+                    <div class="role-icon">
+                        <i class="fa-solid fa-user-tie fa-4x"></i>
+                    </div>
+                    <h3>Administrator</h3>
+                    <p class="text-muted">Manage inventory, monitor orders, and view live financial valuation
+                        analytics.</p>
+                    <div class="mt-auto">
+                        <span class="btn btn-orange btn-sm rounded-pill px-4"
+                              style="background: #FF8C00; color: white;">Access Dashboard</span>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <div id="customer-view" class="hidden">
-        <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="mb-4">
             <h2>Our Products</h2>
-            <select class="form-select w-auto" id="categoryFilter">
-                <option value="all">All Categories</option>
-                <option value="food">Food</option>
-                <option value="clothes">Clothes</option>
-                <option value="appliances">Appliances</option>
-            </select>
+        </div>
+
+        <div class="row mb-4 g-2">
+            <div class="col-md-4">
+                <input type="text" id="customerSearch" class="form-control" style="border-radius: 20px;"
+                       placeholder="Search products..."
+                       oninput="applyFilters()">
+            </div>
+            <div class="col-md-4">
+                <select class="form-select" id="categoryFilter" style="border-radius: 20px;" onchange="applyFilters()">
+                    <option value="all">All Categories</option>
+                    <option value="food">Food</option>
+                    <option value="clothes">Clothes</option>
+                    <option value="appliances">Appliances</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <select class="form-select" id="sortFilter" style="border-radius: 20px;" onchange="applyFilters()">
+                    <option value="name-asc">Name (A-Z)</option>
+                    <option value="price-asc">Price (Low to High)</option>
+                    <option value="price-desc">Price (High to Low)</option>
+                </select>
+            </div>
         </div>
 
         <div id="productGrid" class="row"></div>
