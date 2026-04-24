@@ -1,0 +1,56 @@
+/* Modern Orange-Yellow Gradient Background */
+body {
+    background: linear-gradient(135deg, #FF8C00 0%, #FFD700 100%);
+    min-height: 100vh;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Glassmorphism Effect for Cards */
+.role-card {
+    background: rgba(255, 255, 255, 0.9) !important;
+    backdrop-filter: blur(10px);
+    border: none !important;
+    border-radius: 20px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    color: #333 !important;
+}
+
+.role-card:hover {
+    transform: translateY(-10px);
+    box-shadow: 0 15px 30px rgba(0, 0, 0, 0.2) !important;
+    background: #fff !important;
+}
+
+.role-icon {
+    color: #FF8C00;
+    margin-bottom: 20px;
+}
+
+/* Hero Text Shadow */
+.hero-title {
+    color: white;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+    font-weight: 800;
+}
+
+.hero-subtitle {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Ensure internal shop views remain clean on white backgrounds */
+#customer-view, #admin-view, #cart-view {
+    background: white;
+    padding: 30px;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    margin-bottom: 50px;
+}
+
