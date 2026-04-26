@@ -44,3 +44,23 @@ The application follows a RESTful architecture. You can access the raw data by v
 - `/customers`: Get a list of all customers in JSON format.
 
 When visiting these routes directly, the browser will display raw JSON data.
+
+## Online Deployment:
+
+The application is hosted on https://railway.com and auto-deployment is configured upon every
+git push.
+
+### Deployment Structure:
+
+#### MySQL database:
+
+Railway hosted MySQL database with connection details stored in environment variables.
+
+#### Flask Backend:
+
+- The Flask backend is responsible for handling API requests, processing data, and serving the frontend.
+- It is configured to run on the Railway platform, which provides a seamless deployment experience.
+
+The application can be accessed at https://datashop.up.railway.app/
+
+![img.png](railway_deployment.png)
