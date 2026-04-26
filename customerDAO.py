@@ -15,6 +15,7 @@ class CustomerDAO:
 
     def __init__(self):
         self.host = cfg.mysql['host']
+        self.port = cfg.mysql['port']
         self.user = cfg.mysql['user']
         self.password = cfg.mysql['password']
         self.database = cfg.mysql['database']
@@ -22,6 +23,7 @@ class CustomerDAO:
     def getcursor(self):
         self.connection = mysql.connector.connect(
             host=self.host,
+            port=self.port,
             user=self.user,
             password=self.password,
             database=self.database,

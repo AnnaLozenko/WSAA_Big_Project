@@ -1,15 +1,19 @@
-from flask import Flask, jsonify, request, abort
+from flask import Flask, jsonify, request, abort, render_template  # Added render_template
 from inventoryDAO import inventoryDAO
 from customerDAO import customerDAO
 from ordersDAO import ordersDAO
 from order_itemsDAO import order_itemsDAO
+import os
 
-app = Flask(__name__, static_url_path='', static_folder='.')
+app = Flask(__name__)
+
+basedir = os.path.abspath(os.path.dirname(__file__))
 
 
 @app.route('/')
 def home():
-    return app.send_static_file('index.html')
+    # FIX 2: Use render_template to serve index.html from the /templates folder
+    return render_template('index.html')
 
 
 # ==========================================
@@ -62,7 +66,6 @@ def update_inventory_full(id):
 
 @app.route('/inventory/<int:id>', methods=['PATCH'])
 def update_inventory_partial(id):
-    # For a PATCH, we fetch the existing item and only update the provided fields
     found = inventoryDAO.findById(id)
     if not found:
         abort(404)
@@ -115,7 +118,6 @@ def get_all_orders():
 
 @app.route('/orders', methods=['POST'])
 def create_order():
-    # New orders default to 'Pending'
     if not request.json:
         abort(400)
     req = request.json
@@ -153,7 +155,6 @@ def add_to_cart():
 
 @app.route('/order_items/<int:id>', methods=['PATCH'])
 def change_cart_quantity(id):
-    # Allows a user to change the amount of items in their cart
     found = order_itemsDAO.findById(id)
     if not found:
         abort(404)
@@ -164,23 +165,11 @@ def change_cart_quantity(id):
 
 
 # ==========================================
-# BUSINESS LOGIC: CHECKOUT / PROCESS ORDER
+# CHECKOUT LOGIC
 # ==========================================
-'''
-This endpoint processes the checkout for a given order. It performs the following steps:
-1. Verify if the request is valid, if the order exists, or if it is already processed or failed.
-    If the order is already 'Completed' or 'Failed', the process stops (400) to prevent re-processing. 
-2. Fetch all items in this specific order from the order_items table. If the cart is empty, the process stops (400).
-3. Check if inventory is sufficient for ALL items in the cart. If any item has insufficient stock, the entire 
-    transaction fails (409) and the order status is updated to 'Failed'.
-4. If stock is sufficient for all items, we proceed to deduct the quantities from the inventory.
-5. Mark the order as 'Completed'.
-'''
-
 
 @app.route('/orders/<int:order_id>/checkout', methods=['POST'])
 def process_checkout(order_id):
-    # 1. Verify if order exists
     order = ordersDAO.findById(order_id)
     if not order:
         return jsonify({"error": "Order not found"}), 404
@@ -188,18 +177,15 @@ def process_checkout(order_id):
     if order['status'] != 'Pending':
         return jsonify({"error": f"Order is already {order['status']}"}), 400
 
-    # 2. Fetch all items in this specific order
     all_order_items = order_itemsDAO.getAll()
     items_in_cart = [item for item in all_order_items if item['order_id'] == order_id]
 
     if not items_in_cart:
         return jsonify({"error": "No items in this order"}), 400
 
-    # 3. Check if inventory is sufficient for ALL items
     for item in items_in_cart:
         inv_item = inventoryDAO.findById(item['inv_id'])
         if not inv_item or inv_item['quantity'] < item['quantity']:
-            # Transaction failed due to insufficient stock
             order['status'] = 'Failed'
             ordersDAO.update(order_id, order)
             return jsonify({
@@ -208,13 +194,11 @@ def process_checkout(order_id):
                 "order_status": "Failed"
             }), 409
 
-    # 4. If we reach here, stock is sufficient. Deduct from inventory.
     for item in items_in_cart:
         inv_item = inventoryDAO.findById(item['inv_id'])
         inv_item['quantity'] -= item['quantity']
         inventoryDAO.update(inv_item['id'], inv_item)
 
-    # 5. Mark order as completed
     order['status'] = 'Completed'
     ordersDAO.update(order_id, order)
 
@@ -225,5 +209,6 @@ def process_checkout(order_id):
 
 
 if __name__ == '__main__':
-    # Running on port 5000 by default. Set debug=True for easier development.
-    app.run(debug=True)
+    port = int(os.getenv('PORT', 5000))
+    host = os.getenv('FLASK_HOST', '0.0.0.0')
+    app.run(host=host, port=port, debug=False)
